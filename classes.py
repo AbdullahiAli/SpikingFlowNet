@@ -141,10 +141,10 @@ class SpikingFlowNet:
                         self.rates[name][str(neuron.flow)].append(neuron.firing_rate(self.window))
             # update encoding layers
             for name, encoding_layer in self.encoding_layers.items():
-                [(n_e.update(), ne_neg.update()) for n_e, ne_neg in encoding_layer] 
+                [n_e.update() for n_e in encoding_layer] 
             # update decoding layers
             for name, decoding_layer in self.decoding_layers.items():
-                [(n_d.update(), nd_neg.update()) for n_d, nd_neg in decoding_layer] 
+                [n_d.update()for n_d in decoding_layer] 
     
             
     def get_statistics(self):

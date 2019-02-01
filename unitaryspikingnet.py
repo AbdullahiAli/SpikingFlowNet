@@ -48,63 +48,48 @@ def retrieve_out_connections(node, neighbours):
     
 
 
-def connect_input_layer(n_e, ne_neg, in_connections, WTA_circuits):
+def connect_input_layer(n_e, in_connections, WTA_circuits):
     """
     Connects input WTA circuits to encoding neuron n_e
+    If n_e has no connections with decoder neurons it means the flow
+    is illegal and we add a negative feedback connection in order to
+    inhibit the neurons that contribute to this illegal flow
     """
     for name, capacity, priority in in_connections:
         WTA = WTA_circuits[name]
         for neuron in WTA:
             if 'inhib' not in neuron.name and 'prio' not in neuron.name:
                 if (neuron.flow, name) in n_e.name: # check identifier and flow are in combination
-                    create_connection(neuron, n_e, 1)
-                    create_connection(n_e, neuron, 1) # positive feedback loop
-                    create_connection(ne_neg, neuron, -1) # penalize for invalid flow
-                else:
-                    create_connection(neuron, n_e, -1) # negative constraint
-                    create_connection(n_e, neuron, -1) # negative feedback loop
+                    #create_connection(n_e, neuron, 1) # positive feedback loop
+                    # check if neuron has no post synpases
+                    if len(n_e.pre_synapses) <= 0:
+                        #create_connection(n_e, neuron, -n_e.flow) # penalize for invalid flow
+                        create_connection(neuron, n_e, -neuron.flow) # penalize for invalid flow
+                    else:
+                        create_connection(neuron, n_e, neuron.flow) # valid flow # feedforward excitation
+                        #create_connection(n_e, neuron, n_e.flow) # positive feedback
+                else: # add negative constraint
+                    create_connection(n_e, neuron, -n_e.flow) # negative feedback
 
 def connect_encode_decode(encoding_layer, decoding_layer):
     """
     Connects encoding neurons n_e to decoding neuron n_d
     that represents the same flow. If there is no 
     n_d that represents the same flow it means that the flow n_e
-    represents is too high. In that case, n_e is connected to
-    the n_d that represents the highest flow and inhibitory
-    decoder neuron nd_neg is connected to inhibitory encoder
-    ne_neg to penalize the invalid flow.
+    represents is too high. In that case, n_e is not connected to 
+    any decoder neurons and will have a negative feedback connection
+    to the flow neurons that it represents
     """  
-    for n_e, ne_neg in encoding_layer:
-        best_neuron = None
-        best_neg  = None
-        best_flow = float('-inf')
-        is_connected = False
-        for n_d, nd_neg in decoding_layer:
-            if n_d.flow > best_flow:
-                best_neuron = n_d
-                best_neg = nd_neg
-                best_flow = n_d.flow
+    for n_e in encoding_layer:
+        for n_d in decoding_layer:
             if n_d.flow == n_e.flow: # found matching decoder neuron
-                create_connection(n_e, n_d, 1) # feedforward excitation
-                create_connection(n_d, n_e, 1) # positive feedback
-                is_connected = True
-        if not is_connected:
-            #create_connection(n_e, best_neuron, 1)
-            create_connection(n_e, best_neg, 1) # penalize for invalid flow
-            create_connection(best_neg, ne_neg, -1)
-            #create_connection(n_e, n_e, -1) # penalize for invalid flow]
-            
-#    # lateral inhibition for encoding and decoding layers
-#    for n_d, nd_neg in decoding_layer:
-#        for n_de, _ in decoding_layer:
-#            if n_d.flow != n_de.flow:
-#                create_connection(n_d, n_de, -1) # inhibition if not coding for same flow
-#    for n_e, ne_neg in encoding_layer:
-#        for n_ed, _ in encoding_layer:
-#            if n_e.flow != n_ed.flow:
-#                create_connection(n_e, n_ed, -1) # inhibition if not coding for same flow
+                create_connection(n_e, n_d, n_e.flow) # feedforward excitation
+                #create_connection(n_d, n_e, n_d.flow) # positive feedback
+            else:
+                create_connection(n_d, n_e, -n_d.flow) # negative feedback
+
         
-def connect_output_layer(n_d, nd_neg, out_connections, WTA_circuits):
+def connect_output_layer(n_d, out_connections, WTA_circuits):
     """
     Connects output WTA circuits to decoding neurons n_d.
     Each n_d represents a specific combination flows of the 
@@ -121,10 +106,11 @@ def connect_output_layer(n_d, nd_neg, out_connections, WTA_circuits):
         # that are part of the flow combination
         for neuron in WTA:
             if (neuron.flow, name) in n_d.name: # check identifier and flow are in combination
-                create_connection(n_d, neuron, 1)
-                create_connection(neuron, n_d, 1) # positive feedback loop
+                create_connection(n_d, neuron, n_d.flow) # feedforward excitation
+                #create_connection(neuron, n_d, neuron.flow) # positive feedback
             else:
-                create_connection(n_d, neuron, -1) # negative constraint
+                create_connection(neuron, n_d, -neuron.flow) # negative feednack
+                
                     
 def set_up_wta(WTA, priority):
     """
@@ -133,23 +119,13 @@ def set_up_wta(WTA, priority):
     """
     # create auxilary neurons
     # threshold of 2 so that it only fires if atleast two neurons are active
-    inhib = Neuron(1, 0, name='inhib')
-    prio = Neuron(1, 1, name='prio') # encodes priority bias in competition
-    #prio.voltage = 1
+    #inhib = Neuron(1, 0, name='inhib')
     for neuron in WTA:
-        #create_connection(neuron, inhib, 1)
-        #if 'source' in neuron.name:
-            #create_connection(inhib, neuron, -1)
-        #else:
-            #create_connection(inhib, neuron, -1)
-        #create_connection(neuron, prio, 1)
         # create lateral inhibition between neurons in WTA
         for neuron_j in WTA:
             if neuron_j.flow != neuron.flow:
-                create_connection(neuron, neuron_j, -1)
-        #create_connection(prio, neuron, (1/(10*priority))*neuron.flow)
-            
-    WTA += [inhib, prio]
+                create_connection(neuron, neuron_j, -neuron.flow)       
+    #WTA += [inhib]
     return WTA
 
 
@@ -225,17 +201,19 @@ def create_spiking_net(flow_net, window):
              in_combinations = list(itertools.product(*in_flows))
              for combination in in_combinations:
                  n_e = Neuron(len(combination), 0, name = combination, flow = sum([flow for flow, name in combination]))
-                 ne_neg = Neuron(1, 0, name = combination)
-                 connect_input_layer(n_e, ne_neg,  in_connections, WTA_circuits)
-                 encoding_layer.append((n_e, ne_neg))
+                 encoding_layer.append(n_e)
              # create decoding layer
              out_combinations = list(itertools.product(*out_flows))
              for combination in out_combinations:
                  n_d = Neuron(1, 0, name = combination, flow = sum([flow for flow, name in combination]))
-                 nd_neg = Neuron(1, 0, name = combination)
-                 connect_output_layer(n_d, nd_neg, out_connections, WTA_circuits)
-                 decoding_layer.append((n_d, nd_neg))
+                 decoding_layer.append(n_d)
+                 
+        # connect encoding decoding and i/o modules
         connect_encode_decode(encoding_layer, decoding_layer)
+        for n_e in encoding_layer:
+            connect_input_layer(n_e, in_connections, WTA_circuits)
+        for n_d in decoding_layer:
+            connect_output_layer(n_d, out_connections, WTA_circuits)
         encoding_layers[node] = encoding_layer
         decoding_layers[node] = decoding_layer
     # set up network
