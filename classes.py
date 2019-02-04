@@ -10,9 +10,10 @@ class Neuron:
     
     """
     
-    def __init__(self,threshold, reset, flow=None, leakage=1, voltage=0, spiked=False, name = None):
+    def __init__(self,threshold, reset, flow=None, capacity=None, leakage=1, voltage=0, spiked=False, name = None):
         self.threshold = threshold
         self.flow = flow # flow neurons encode in WTA circuit
+        self.capacity= capacity # capacity encoded by WTA circuit
         self.reset = reset
         self.leakage = leakage
         self.spiked = spiked
@@ -35,7 +36,7 @@ class Neuron:
        to neural integration process to
        kick off activation
        """
-       if np.random.poisson(1,1) > 2:
+       if np.random.poisson(1,1) > 1:
            return 1
        return 0
    
@@ -56,8 +57,11 @@ class Neuron:
         else:
             for synapse in self.pre_synapses:
                  self.voltage += synapse.pre.history[self.timestep - synapse.delay]*synapse.weight 
-        if self.flow != None: # transmitters add noise and bias
-            self.voltage += 0.1*self.flow #+ self.noise()
+        if self.flow != None and self.capacity != None: # exclude decoder, encoder and transmitter neurons
+            #self.voltage /= self.capacity
+            self.voltage += (1/(self.capacity))*self.flow #+ self.noise()#+ self.noise() #+ np.random.randn(1)
+        elif self.flow != None: # for encoder and decoder neurons
+            self.voltage += 0 #(1/5)*self.flow
         if self.voltage >= self.threshold:
         #if self.spike_prob(self.voltage) < np.random.rand():
             self.nr_spikes += 1

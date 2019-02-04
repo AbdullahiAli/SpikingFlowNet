@@ -41,7 +41,7 @@ from flownetwork import *
 import numpy as np
     
 
-SIM_TIME = 5000 # 5s simulation
+SIM_TIME = 10000 # 5s simulation
 WINDOW = 200 # time window for spike bins (in msec)
 def spike_flow(flow_network):
     """

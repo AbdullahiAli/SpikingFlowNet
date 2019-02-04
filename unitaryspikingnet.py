@@ -59,12 +59,12 @@ def connect_input_layer(n_e, in_connections, WTA_circuits):
         WTA = WTA_circuits[name]
         for neuron in WTA:
            if (neuron.flow, name) in n_e.name: # check identifier and flow are in combination
-                if not n_e.is_valid: # strong penalty proportional to flow
-                    create_connection(n_e, neuron, -1)
-                    create_connection(neuron, n_e, -500*n_e.flow)
-                else:
-                    create_connection(n_e, neuron, 1) # feedforward excitation
-                    create_connection(neuron, n_e, 1) # positive feedback
+                #if not n_e.is_valid: # strong penalty proportional to flow
+                    #create_connection(n_e, neuron, -2)
+                    #create_connection(neuron, n_e, -50000*n_e.flow)
+                #else:
+                create_connection(n_e, neuron, 1) # feedforward excitation
+                create_connection(neuron, n_e, 1) # positive feedback
            else:
                 create_connection(neuron, n_e, -1) # negative feednack
                 create_connection(n_e, neuron, -1)
@@ -87,10 +87,34 @@ def connect_encode_decode(encoding_layer, decoding_layer):
                 n_d.is_valid = True
                 n_e.is_valid = True
             else: # they do not match so negative constraint
-                create_connection(n_d, n_e, -1) # negative feedback
+                create_connection(n_d, n_e, -1) #  strong negative feedback
                 create_connection(n_e, n_d, -1)
-        
-        
+#    # remove invalid nodes encoding layer
+#    invalid_e, invalid_d = [], []
+#    for n_e in encoding_layer:
+#        if not n_e.is_valid:
+#            invalid_e.append(n_e)
+#            # remove connections from decoding layer
+#            for n_d in decoding_layer:
+#                if n_e in n_d.post_synapses:
+#                    n_d.post_synapses.remove(n_e)
+#    # remove invalid nodes decoding layer
+#    for n_d in decoding_layer:
+#        if not n_d.is_valid:
+#            invalid_d.append(n_d)
+#            # remove connections from decoding layer
+#            for n_e in encoding_layer:
+#                if n_d in n_e.post_synapses:
+#                    n_e.post_synapses.remove(n_d)
+#        
+#    # remove invalid n_e's and n_d's from layers
+#    for n_e in invalid_e:
+#        encoding_layer.remove(n_e)
+#    for n_d in invalid_d:
+#        decoding_layer.remove(n_d)
+#    print(len(encoding_layer))
+#    return encoding_layer, decoding_layer
+
 def connect_output_layer(n_d, out_connections, WTA_circuits):
     """
     Connects output WTA circuits to decoding neurons n_d.
@@ -108,12 +132,12 @@ def connect_output_layer(n_d, out_connections, WTA_circuits):
         # that are part of the flow combination
         for neuron in WTA:
             if (neuron.flow, name) in n_d.name: # check identifier and flow are in combination
-                if not n_d.is_valid: # strong penalty proportional to flow
-                    create_connection(n_d, neuron, -1)
-                    create_connection(neuron, n_d, -500*n_d.flow)
-                else:
-                    create_connection(n_d, neuron, 1) # feedforward excitation
-                    create_connection(neuron, n_d, 1) # positive feedback
+                #if not n_d.is_valid: # strong penalty proportional to flow
+                    #create_connection(n_d, neuron, -2)
+                    #create_connection(neuron, n_d, -50000*n_d.flow)
+                #else:
+                create_connection(n_d, neuron, 1) # feedforward excitation
+                create_connection(neuron, n_d, 1) # positive feedback
             else:
                 create_connection(neuron, n_d, -1) # negative feednack
                 create_connection(n_d, neuron, -1)
@@ -136,7 +160,32 @@ def set_up_wta(WTA, priority):
     #WTA += [inhib]
     return WTA
 
-
+def prune_invalid_flows(in_combinations, out_combinations):
+    """
+    Method that removes illegal flows 
+    """
+    new_in = []
+    for in_comb in in_combinations:
+        valid = False
+        in_flow = sum([flow for flow,name in in_comb])
+        for out_comb in out_combinations:
+            out_flow = sum([flow for flow, name in out_comb])
+            if in_flow == out_flow: # valid in_flow  combination
+                valid =True
+        if valid:
+            new_in.append(in_comb)
+    new_out = []
+    for out_comb in out_combinations:
+        valid = False
+        out_flow = sum([flow for flow,name in out_comb])
+        for in_comb in in_combinations:
+            in_flow = sum([flow for flow, name in in_comb])
+            if in_flow == out_flow: # valid out_flow  combination
+                valid=True
+        if valid:
+            new_out.append(out_comb)
+    return new_in, new_out
+                
 def create_spiking_net(flow_net, window):
     """
     function that maps a flow network
@@ -168,10 +217,10 @@ def create_spiking_net(flow_net, window):
     WTA_circuits = dict() 
     transmitters = []
     # create WTA circuits
-    for name, capacity, priority in connections:
+    for name, cap, priority in connections:
    
         # create WTA circuit
-        WTA = [Neuron(1, 0, i, name=name + " " + str(i)) for i in range(capacity + 1)]
+        WTA = [Neuron(1, 0, i, cap, name=name + " " + str(i)) for i in range(cap + 1)]
       
         # set up connectivity of WTA
         WTA = set_up_wta(WTA, priority)
@@ -181,7 +230,7 @@ def create_spiking_net(flow_net, window):
         for neuron in WTA:
             if 'inhib' not in neuron.name and 'prio' not in neuron.name:
                 #print(neuron.flow/ (priority+1))
-                create_connection(n_t, neuron, neuron.flow/(priority+1))
+                create_connection(n_t, neuron, neuron.flow/(priority+1))#(priority+1))
         transmitters.append(n_t)
         # add WTA circuit to dictionary
         WTA_circuits[name] = WTA
@@ -199,26 +248,33 @@ def create_spiking_net(flow_net, window):
              # retrieve possible in_flows and link to originating connection
              for name, capacity, priority in in_connections:
                  flow_range = list(range(0, capacity + 1)) # range of flow in WTA
-                 in_flows.append([(flow,name) for flow in flow_range]) # add identifier
+                 in_flows.append([(flow, name) for flow in flow_range]) # add identifier
                  
             # retrieve possible out_flows and link to originating connection
              for name, capacity, priority in out_connections:
                  flow_range = list(range(0, capacity + 1)) # range of flow in WTA
                  out_flows.append([(flow, name) for flow in flow_range])
              
+             # create possible in_combinations and out_combinations
+             in_combinations, out_combinations = list(itertools.product(*in_flows)), list(itertools.product(*out_flows))
+             # prune illegal combinations
+             in_combinations, out_combinations = prune_invalid_flows(in_combinations, out_combinations)
+           
              # create encoding layer
-             in_combinations = list(itertools.product(*in_flows))
              for combination in in_combinations:
                  n_e = Neuron(len(combination), 0, name = combination, flow = sum([flow for flow, name in combination]))
                  encoding_layer.append(n_e)
+                 
              # create decoding layer
-             out_combinations = list(itertools.product(*out_flows))
              for combination in out_combinations:
                  n_d = Neuron(1, 0, name = combination, flow = sum([flow for flow, name in combination]))
                  decoding_layer.append(n_d)
-                 
+         
         # connect encoding decoding and i/o modules
         connect_encode_decode(encoding_layer, decoding_layer)
+
+        # create WTA circuits out of encoder and decoder layers
+        encoding_layer, decoding_layer = set_up_wta(encoding_layer, 0), set_up_wta(decoding_layer, 0)
         for n_e in encoding_layer:
             connect_input_layer(n_e, in_connections, WTA_circuits)
         for n_d in decoding_layer:
