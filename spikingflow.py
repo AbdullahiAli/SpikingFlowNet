@@ -155,6 +155,7 @@ def run_network(flow_net):
     print("Solution: " + '\n')
     for name, flow in  solution:
         print(name + ":" + str(flow))
+        
 def test0():
     """
     test to determine if spiking flow

@@ -23,7 +23,7 @@ class Neuron:
         self.pre_synapses = []
         self.post_synapses = []
         self.name = name
-
+        self.is_valid = False # validity flag for encoder and decoder neurons
         
     def __str__(self):
         return "spikes: "+ str(self.nr_spikes)+ " "+ "voltage: "+ str(self.voltage) \
@@ -38,6 +38,9 @@ class Neuron:
        if np.random.poisson(1,1) > 2:
            return 1
        return 0
+   
+    def spike_prob(self, voltage):
+        return (1/20) * np.exp(voltage)
     
     def update(self):
         """
@@ -46,15 +49,17 @@ class Neuron:
         """
      
         self.voltage *= self.leakage # multiplicative leakage
-      
         if self.timestep < 21: # In the beginning only for delay == 0
                 for synapse in self.pre_synapses:
                     if synapse.delay == 0:
-                        self.voltage += synapse.pre.history[self.timestep - synapse.delay]*synapse.weight + self.noise()
+                        self.voltage += synapse.pre.history[self.timestep - synapse.delay]*synapse.weight 
         else:
             for synapse in self.pre_synapses:
-                 self.voltage += synapse.pre.history[self.timestep - synapse.delay]*synapse.weight + self.noise()
+                 self.voltage += synapse.pre.history[self.timestep - synapse.delay]*synapse.weight 
+        if self.flow != None: # transmitters add noise and bias
+            self.voltage += 0.1*self.flow #+ self.noise()
         if self.voltage >= self.threshold:
+        #if self.spike_prob(self.voltage) < np.random.rand():
             self.nr_spikes += 1
             self.history.append(1)
             self.reset_param()
