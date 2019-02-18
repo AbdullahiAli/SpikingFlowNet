@@ -1,10 +1,12 @@
 import matplotlib.pyplot as plt
 import random, string, itertools
 from collections import deque
+from classes import *
 plt.style.use('ggplot')
 
 
 
+    
 def Edmonds_Karp(gen_flow_net):
     """
     Calculates reference max flow in network

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Most recent version: August 1st 2018
+Most recent version: Februari 6 2019
 @author: Abdullahi Ali email: a.ali@student.ru.nl
 --------
 This script generates and tests spiking network implementations 
@@ -41,7 +41,7 @@ from flownetwork import *
 import numpy as np
     
 
-SIM_TIME = 10000 # 5s simulation
+SIM_TIME = 20000 # 5s simulation
 WINDOW = 200 # time window for spike bins (in msec)
 def spike_flow(flow_network):
     """
@@ -55,7 +55,92 @@ def spike_flow(flow_network):
     spiking_network.sim(SIM_TIME)
     return spiking_network
 
+def Spiking_EK(gen_flow_net):
+    """
+    Calculates Spiking E-K
+    """
+    """
+    Initialize flow and flow net and boolean indicator
+    """
+    flow_net, max_flow, augmenting_path = dict(), 0, True
+    
+    """
+    Create graph with edges that consitute of 4-tuples
+    (neighbour, capacity, flow, reversed flow)
+    """
+    for node in gen_flow_net:
+        flow_net[node] = [(neighbour,capacity, 0,0) for neighbour, capacity in gen_flow_net[node]]
+    av_spikes, av_time = [], [] # keep track of average number of spikes and average number of time steps
+    while augmenting_path: # find augmenting path using spiking net
+        spiking_net = create_spiking_search_net(flow_net)
+        # simulate spiking net for 100 timesteps
+        while not spiking_net.terminated():
+            spiking_net.sim(1)
+        spikes, time = spiking_net.get_statistics()
+        av_spikes.append(spikes)
+        av_time.append(time)
+        # get data
+        neurons = spiking_net.get_data()
+        # sort neurons on FST
+        neurons.sort(key=lambda x: x[1], reverse=True)
+        path = []
+        nodes  = [] # keep track of all nodes on path
+        # construct  shortest path
+        if len(neurons) != 0:
+            start, FST = neurons[0][0], neurons[0][1]
+            path  = [(start, FST)]
+            for curr, FST in neurons:
+                prev, old_FST = path[-1] # retrieve most recent end on path
+                dest = prev.split('->')[1]
+                source = curr.split('->')[0]
+                nodes.append(source)
+                nodes.append(dest)
+                # check if dest of prev and source of curr match
+                if  dest == source and FST < old_FST: # valid continuation of path
+                    path.append((curr, FST))
+        # preprocessing of path to fall in line with previous E-K implementation (artifact)
+        pred = dict()
+        path = [name for name, FST in path]
 
+        for name in path:
+            node, neighbour = name.split('->')
+            for n, c, f, rf in flow_net[node]:
+                if n == neighbour:
+                    pred[neighbour] = (node, neighbour, c, f, rf)
+        if 'sink' in pred.keys() and 'source' in nodes: 
+            # we found an augmenting path see how much flow we can push
+            dflow = float("inf") # change in flow
+            node = 'sink'
+            reached = False
+           
+            while not reached:
+                source, sink, capacity, flow, rev_flow = pred[node]
+                dflow = min(dflow, capacity - flow)
+                node = source
+                if node == 'source':
+                    reached = True
+                
+            # and update the edges with this flow
+            node = 'sink'
+            reached = False
+           
+            while not reached:
+                source, sink, capacity, flow, rev_flow = pred[node]
+                for i, edge in enumerate(flow_net[source]):
+                        neighbour, capacity, flow, rev_flow = edge
+                        if neighbour == sink:
+                            # update flow and reversed flow
+                            flow_net[source][i] = (neighbour, capacity, flow + dflow, rev_flow - dflow)
+                node = source
+                if node == 'source':
+                    reached = True
+                    
+            max_flow += dflow
+        else:
+            # if no augmenting path is found terminate algorithm and return found max flow
+            augmenting_path = False
+               
+    return max_flow, np.mean(av_spikes), np.mean(av_time)
 
 def calculate_spike_stats(networks):
     """
@@ -63,14 +148,9 @@ def calculate_spike_stats(networks):
     for a given set of networks
     """
     spikes, flow, error, time = [], [], [], []
-    max_error, bad_flow_net, bad_spike_net = 0, None, None
     for flow_net, max_flow in networks:
-        spike_flow_net = spike_flow(flow_net)
-        net_spikes, net_flow, net_time = spike_flow_net.get_statistics()
+        net_flow, net_spikes, net_time = Spiking_EK(flow_net)
         net_error = abs(max_flow - net_flow) / max_flow
-        if net_error > max_error:
-            bad_flow_net, bad_spike_net = flow_net, spike_flow_net
-        #print("max_flow: " + str(max_flow) + " net flow: " + str(net_flow))
         spikes.append(net_spikes)
         flow.append(net_flow)
         error.append(net_error)
@@ -79,7 +159,7 @@ def calculate_spike_stats(networks):
     avg_spikes =  sum(spikes)/len(networks)
     avg_time = sum(time)/ len(networks)
  
-    return avg_error, avg_spikes, avg_time, bad_flow_net, bad_spike_net
+    return avg_error, avg_spikes, avg_time
 
 def experiment():
     """
@@ -91,7 +171,7 @@ def experiment():
     small, large = 5, 40
     for i in range(small, large):
         networks = [generate_flow_net(i,i-1,10) for j in range(40)]
-        error, spikes, time, bad_flow_net, bad_spike_net = calculate_spike_stats(networks)
+        error, spikes, time = calculate_spike_stats(networks)
         total_error.append(error)
         total_spikes.append(spikes)
         total_time.append(time)
@@ -115,11 +195,17 @@ def experiment():
     plt.xlabel('network size')
     plt.ylabel('number of time steps (averaged)')
     plt.show()
-    #print(bad_flow_net)
-    #print(bad_spike_net)
-
 
 def run_network(flow_net):
+    """
+    Helper function that runs a spiking
+    net simulation for a specific network flow
+    graph
+    """
+    print("E - K flow: " + str(Edmonds_Karp(flow_net)))
+    print("spiking E- K flow: " + str(Spiking_EK(flow_net)))
+    
+def run_network_old(flow_net):
     """
     Helper function that runs a spiking
     net simulation for a specific network flow
@@ -247,8 +333,8 @@ def test6():
 """
 Uncomment any of these calls (or both)
 """ 
-#experiment()
-test0()       
+experiment()
+#test0()       
 
 
 
